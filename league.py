@@ -39,7 +39,7 @@ def lambda_handler(event, context):
     logger.info('got event{}'.format(event))
     print("Received event: " + json.dumps(event, indent=2))
 
-    dynamo = dynamo_client.Table('users')
+    dynamo = dynamo_client.Table('league')
     
     operations = {
         'DELETE': lambda dynamo, x: dynamo.delete_item(**x),
@@ -78,8 +78,7 @@ def lambda_handler(event, context):
         elif operation == 'PUT':
             # Get path param id
             
-            resource_id = event['pathParameters'] if 'pathParameters' in event.keys() else None
-            resource_id = resource_id['proxy'] if isinstance(resource_id, dict) else None
+            resource_id = event.get('proxy', None) if 'pathParameters' in event.keys() else None
             if not resource_id:
                 return respond(None, {"res":"resource id is required"})
 
@@ -91,35 +90,23 @@ def lambda_handler(event, context):
                 dynamo.update_item(
                     Key={'id': resource_id},
                     UpdateExpression = upt_expr.rstrip(','),
-                    ExpressionAttributeValues = {":"+k:v for k, v in payload.items()}
+                    ExpressionAttributeValues = {":"+k:v for k, v in payload.iteritems()}
                 )
                 return respond(None, {"res":"Updated successfully"})
             except ClientError as e:
                 return respond(None, {"res":e})
             
         elif operation == 'GET':
-            
-            resource_id = event['pathParameters'] if 'pathParameters' in event.keys() else None
-            print("sess", resource_id)
-            #resource_id = resource_id['proxy'] if "proxy" in resource_id else None
-            resource_id = resource_id['proxy'] if isinstance(resource_id, dict) else None
+            resource_id = event.get('proxy', None) if 'pathParameters' in event.keys() else None
             if resource_id:
                 data = dynamo.scan(
                             FilterExpression='id=:id', 
                             ExpressionAttributeValues={":id": resource_id}
                         )                
-                for r in data['Items']:
-                    if 'age' in r.keys():
-                        r['age'] = str(r['age'])
+                
                 return respond(None, data['Items'])
             else:
                 return respond(None, dynamo.scan())
 
-        # try:
-        #     return respond(None, operations[operation](dynamo, payload))
-        # except ParamValidationError as e:
-        #     return respond(e)
-        # except ClientError as e:
-        #     return respond(e)
     else:
         return respond(ValueError('Unsupported method "{}"'.format(operation)))
