@@ -3,6 +3,8 @@ import boto3
 import json
 import uuid
 import logging
+import decimal
+from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError, ParamValidationError
 
 logger = logging.getLogger()
@@ -10,7 +12,7 @@ logger.setLevel(logging.INFO)
 
 print('Loading function')
 dynamo_client = boto3.resource('dynamodb', region_name='us-east-2')
-
+dynamo = dynamo_client.Table('league')
 
 def respond(err, res=None):
     err_msg = None
@@ -21,8 +23,8 @@ def respond(err, res=None):
     if isinstance(res, dict) and 'Items' in res.keys():
         # minimize decimal issue
         for r in res['Items']:
-            if 'age' in r.keys():
-                r['age'] = str(r['age'])
+            for k, v in r.items():
+                r[k] = str(v)
     
     
     return {
@@ -30,50 +32,47 @@ def respond(err, res=None):
         'body': err_msg if err_msg else json.dumps(res.get('Items') if isinstance(res, dict) and 'Items' in res.keys() else res),
         'headers': {
             'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
         },
     }
-
 
 def lambda_handler(event, context):
     
     logger.info('got event{}'.format(event))
     print("Received event: " + json.dumps(event, indent=2))
-
-    dynamo = dynamo_client.Table('league')
     
     operations = {
         'DELETE': lambda dynamo, x: dynamo.delete_item(**x),
         'GET': lambda dynamo, x: dynamo.scan(),
         'POST': lambda dynamo, x: dynamo.put_item(Item=x),
         'PUT': lambda dynamo, x: dynamo.update_item(**x),
+        'OPTIONS': lambda dynamo, x: dynamo.scan(),     # added for angular 
     }
         
     operation = event['httpMethod']
     if operation in operations:
-        payload = event['pathParameters'] if operation == 'GET' else json.loads(event['body'])
+        
+        body = event['body'] if event['body'] else '{}'
+        payload = event['pathParameters'] if operation == 'GET' else json.loads(body)
         
         if operation == 'POST':
             
             # check for primary key validation
-            payload['id'] = str(uuid.uuid4())
+            payload['id'] = str(uuid.uuid4())    
+            if isinstance(payload, dict) and "name" not in payload.keys():
+                return respond(None, {"res":"League name is required"})        
             
-            if isinstance(payload, dict) and "email" not in payload.keys():
-                return respond(None, {"res":"Email is required"})        
+            if isinstance(payload, dict) and payload['name'] == '':
+                return respond(None, {"res":"League name can't be blank"})
             
-            if isinstance(payload, dict) and payload['email'] == '':
-                return respond(None, {"res":"Email can't be blank"})
-            
-            check_email = dynamo.scan(
-                                FilterExpression='email=:em', 
-                                ExpressionAttributeValues={":em": payload.get('email')}
-                            )
+            league_exist = dynamo.scan(FilterExpression=Attr('name').contains(payload.get('name')))
 
-            if check_email.get('Items', None):
-                return respond(None, {"res":"Email already exists"})   
+            if league_exist.get('Items', None):
+                return respond(None, {"res":"League already exists"})   
 
-            create_user = dynamo.put_item(Item=payload)
-            if create_user:
-                return respond(None, {"res":"user created successfully"})
+            create_league = dynamo.put_item(Item=payload)
+            if create_league:
+                return respond(None, {"res":"league created successfully"})
 
         elif operation == 'PUT':
             # Get path param id
@@ -92,11 +91,11 @@ def lambda_handler(event, context):
                     UpdateExpression = upt_expr.rstrip(','),
                     ExpressionAttributeValues = {":"+k:v for k, v in payload.iteritems()}
                 )
-                return respond(None, {"res":"Updated successfully"})
+                return respond(None, {"res":"League updated successfully"})
             except ClientError as e:
                 return respond(None, {"res":e})
             
-        elif operation == 'GET':
+        elif operation == 'GET' or operation == 'OPTIONS':
             resource_id = event.get('proxy', None) if 'pathParameters' in event.keys() else None
             if resource_id:
                 data = dynamo.scan(
