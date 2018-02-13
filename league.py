@@ -98,11 +98,16 @@ def lambda_handler(event, context):
                 dynamo.update_item(
                     Key={'id': resource_id},
                     UpdateExpression = upt_expr.rstrip(','),
-                    ExpressionAttributeValues = {":"+k:v for k, v in payload.iteritems()}
+                    ExpressionAttributeValues = {":"+k:v for k, v in payload.items()}
                 )
                 return respond(None, {"res":"League updated successfully"})
             except ClientError as e:
-                return respond({"res":e}, {})
+                try:
+                    response = e.response['Error'].get('Message')
+                except KeyError as e:
+                    response = e.message
+        
+                return respond({"res":response}, {})
             
         elif operation == 'GET':
             

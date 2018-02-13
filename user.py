@@ -125,7 +125,7 @@ def send_mail_on_register(payload):
         )
     except ClientError as e:
         try:
-            response = e['response']['Error'].get('Message')
+            response = e.response['Error'].get('Message')
         except KeyError as e:
             response = e.message
         
@@ -300,7 +300,7 @@ def lambda_handler(event, context):
             except ClientError as e:
                 
                 try:
-                    response = e['response']['Error'].get('Message')
+                    response = e.response['Error'].get('Message')
                 except KeyError as e:
                     response = e.message
                 
