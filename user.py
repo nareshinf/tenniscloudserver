@@ -298,8 +298,14 @@ def lambda_handler(event, context):
                 )
                 return respond(None, {"res":"Updated successfully"})
             except ClientError as e:
-                return respond({"res":e}, {})
-            
+                
+                try:
+                    response = e['response']['Error'].get('Message')
+                except KeyError as e:
+                    response = e.message
+                
+                return respond({"res":response}, {})
+
         elif operation == 'GET':
             
             if 'login' in event['path'] or 'forgot-password' in event['path'] or 'change-password' in event['path']:
@@ -315,7 +321,14 @@ def lambda_handler(event, context):
                 for r in data['Items']:
                     if 'age' in r.keys():
                         r['age'] = str(r['age'])
-                return respond(None, {"res":data['Items']})
+                
+                    if 'password' in r.keys():
+                        del r['password']
+
+                    if 'plain_pwd' in r.keys():
+                        del r['plain_pwd']
+
+                return respond(None, {"res": data.get('Items')[0] if data['Items'] else data['Items'] })
             else:
                 return respond(None, dynamo.scan())
 
