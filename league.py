@@ -66,13 +66,13 @@ def lambda_handler(event, context):
             
             # check for primary key validation
             payload['id'] = str(uuid.uuid4())    
-            if isinstance(payload, dict) and "name" not in payload.keys():
+            if isinstance(payload, dict) and "league_name" not in payload.keys():
                 return respond({"res":"League name is required"}, {})        
             
-            if isinstance(payload, dict) and payload['name'] == '':
+            if isinstance(payload, dict) and payload['league_name'] == '':
                 return respond({"res":"League name can't be blank"}, {})
             
-            league_exist = dynamo.scan(FilterExpression=Attr('name').contains(payload.get('name')))
+            league_exist = dynamo.scan(FilterExpression=Attr('league_name').contains(payload.get('league_name')))
 
             if league_exist.get('Items', None):
                 return respond({"res":"League already exists"}, {})   
