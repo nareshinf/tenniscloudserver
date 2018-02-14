@@ -316,7 +316,7 @@ def lambda_handler(event, context):
             
             query_string = event.get('queryStringParameters', None)
             if query_string:
-                if 'q' in query_string and query_string.get('q') == 'name':
+                if 'q' in query_string and query_string.get('q') == 'players':
                     data = dynamo.scan(ProjectionExpression='id,full_name,email')
                     return respond(None, data)
 
