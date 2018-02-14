@@ -1,22 +1,14 @@
 table = dynamodb.create_table(
-    TableName='users',
+    TableName='group',
     KeySchema=[
         {
             'AttributeName': 'id',
             'KeyType': 'HASH'
-        },
-        {
-            'AttributeName': 'email',
-            'KeyType': 'RANGE'
         }
     ],
     AttributeDefinitions=[
         {
             'AttributeName': 'id',
-            'AttributeType': 'S'
-        },
-        {
-            'AttributeName': 'email',
             'AttributeType': 'S'
         }
 

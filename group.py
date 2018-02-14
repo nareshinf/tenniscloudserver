@@ -13,7 +13,7 @@ logger.setLevel(logging.INFO)
 
 print('Loading function')
 dynamo_client = boto3.resource('dynamodb', region_name='us-east-2')
-dynamo = dynamo_client.Table('league')
+dynamo = dynamo_client.Table('group')
 
 def respond(err, res=None):
     err_msg = None
@@ -63,19 +63,20 @@ def lambda_handler(event, context):
         payload = event['pathParameters'] if operation == 'GET' else json.loads(body)
         
         if operation == 'POST':
-            
+
             # check for primary key validation
             payload['id'] = str(uuid.uuid4())    
-            if isinstance(payload, dict) and "league_name" not in payload.keys():
-                return respond({"res":"League name is required"}, {})        
+            if isinstance(payload, dict) and "group_name" not in payload.keys():
+                return respond({"res":"Group name is required"}, {})        
             
-            if isinstance(payload, dict) and payload['league_name'] == '':
-                return respond({"res":"League name can't be blank"}, {})
+            if isinstance(payload, dict) and payload['group_name'] == '':
+                return respond({"res":"Group name can't be blank"}, {})
             
-            league_exist = dynamo.scan(FilterExpression=Attr('league_name').contains(payload.get('league_name')))
+            league_exist = dynamo.scan(FilterExpression=Attr('group_name').\
+                            contains(payload.get('group_name')))
 
             if league_exist.get('Items', None):
-                return respond({"res":"League already exists"}, {})   
+                return respond({"res":"Group already exists"}, {})   
 
             payload['created'] = str(datetime.now().date())
             try:
@@ -89,13 +90,13 @@ def lambda_handler(event, context):
                 return respond({"res":response}, {})
             
             if create_league:
-                return respond(None, {"res":"League created successfully"})
+                return respond(None, {"res":"Group created successfully"})
 
         elif operation == 'PUT':
             # Get path param id
             
             resource_id = event['pathParameters'] if 'pathParameters' in event.keys() else None
-            resource_id = resource_id['proxy'] if isinstance(resource_id, dict) else None
+            resource_id = resource_id['group_id'] if isinstance(resource_id, dict) else None
             if not resource_id:
                 return respond({"res":"Resource Id is required"}, {})
 
@@ -109,7 +110,7 @@ def lambda_handler(event, context):
                     UpdateExpression = upt_expr.rstrip(','),
                     ExpressionAttributeValues = {":"+k:v for k, v in payload.items()}
                 )
-                return respond(None, {"res":"League updated successfully"})
+                return respond(None, {"res":"Group updated successfully"})
             except ClientError as e:
                 try:
                     response = e.response['Error'].get('Message')
@@ -121,7 +122,7 @@ def lambda_handler(event, context):
         elif operation == 'GET':
             
             resource_id = event['pathParameters'] if 'pathParameters' in event.keys() else None
-            resource_id = resource_id['proxy'] if isinstance(resource_id, dict) else None
+            resource_id = resource_id['group_id'] if isinstance(resource_id, dict) else None
             
             if resource_id:
                 data = dynamo.scan(
@@ -132,39 +133,27 @@ def lambda_handler(event, context):
                 return respond(None, data['Items'])
             else:
                 data = dynamo.scan()
-                for it in data['Items']:
-                    pl=[]
-                    if 'groups' in it.keys():
-                        for p in it['groups']:
-                            pl.extend(p.get('players'))
-                        it['players'] = pl
-                        del it['groups']
-
                 return respond(None, data)
 
         elif operation == 'OPTIONS':
             return respond({})
 
         elif operation == 'DELETE':
-            if event['resource'] in ['login', 'forgot-password', 'change-password']:
-                return respond(None, {"res": "Method not allowed"})
 
             resource_id = event['pathParameters'] if 'pathParameters' in event.keys() else None
-            resource_id = resource_id['proxy'] if isinstance(resource_id, dict) else None
+            resource_id = resource_id['group_id'] if isinstance(resource_id, dict) else None
 
             if not resource_id:
                 return respond({"res": "Resource id is required"}, {})
 
             if resource_id:
-                
-                league_tbl = dynamo_client.Table('league')
-                data = league_tbl.delete_item(
+                data = dynamo.delete_item(
                             Key={
                                 'id': resource_id
                             }
                         )
                  
-                return respond(None, {"res": "League deleted successfully"})
+                return respond(None, {"res": "Group deleted successfully"})
 
     else:
         return respond(ValueError('Unsupported method "{}"'.format(operation)))

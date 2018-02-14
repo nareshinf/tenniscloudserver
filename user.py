@@ -311,13 +311,20 @@ def lambda_handler(event, context):
             if 'login' in event['path'] or 'forgot-password' in event['path'] or 'change-password' in event['path']:
                 return respond({"res": "Method not allowed"}, {})
 
-            resource_id = event['pathParameters'] if 'pathParameters' in event.keys() else None
+            resource_id = event.get('pathParameters', None)
             resource_id = resource_id['proxy'] if isinstance(resource_id, dict) else None
+            
+            query_string = event.get('queryStringParameters', None)
+            if query_string:
+                if 'q' in query_string and query_string.get('q') == 'name':
+                    data = dynamo.scan(ProjectionExpression='id,full_name,email')
+                    return respond(None, data)
+
             if resource_id:
                 data = dynamo.scan(
                             FilterExpression='id=:id', 
                             ExpressionAttributeValues={":id": resource_id}
-                        )                
+                        )
                 for r in data['Items']:
                     if 'age' in r.keys():
                         r['age'] = str(r['age'])
