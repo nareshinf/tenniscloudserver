@@ -29,7 +29,7 @@ def respond(err, res=None):
             for k, v in r.items():
                 if isinstance(v, decimal.Decimal):
                     v = str(v)
-                r[k] = str(v)
+                r[k] = v
     
     
     return {
