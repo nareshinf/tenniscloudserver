@@ -29,7 +29,7 @@ def respond(err, res=None):
             for k, v in r.items():
                 if isinstance(v, decimal.Decimal):
                     v = str(v)
-                r[k] = str(v)
+                r[k] = v
     
     
     return {
@@ -39,7 +39,8 @@ def respond(err, res=None):
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Credentials': 'true',
-            'Access-Control-Allow-Headers': 'Origin, Accept, Content-Type, Authorization, Access-Control-Allow-Origin'
+            'Access-Control-Allow-Headers': 'Origin, Accept, Content-Type, Authorization, Access-Control-Allow-Origin',
+            'Access-Control-Allow-Methods': ' DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT'
         },
     }
 
@@ -75,8 +76,8 @@ def lambda_handler(event, context):
             league_exist = dynamo.scan(FilterExpression=Attr('league_name').contains(payload.get('league_name')))
 
             if league_exist.get('Items', None):
-                return respond({"res":"League already exists"}, {})   
-
+                return respond({"res":"League already exists"}, {})
+                
             payload['created'] = str(datetime.now().date())
             try:
                 create_league = dynamo.put_item(Item=payload)
@@ -120,6 +121,9 @@ def lambda_handler(event, context):
             
         elif operation == 'GET':
             
+            grp_dynamo = dynamo_client.Table('group')
+            player_dynamo = dynamo_client.Table('users')
+            
             resource_id = event['pathParameters'] if 'pathParameters' in event.keys() else None
             resource_id = resource_id['proxy'] if isinstance(resource_id, dict) else None
             
@@ -128,17 +132,48 @@ def lambda_handler(event, context):
                             FilterExpression='id=:id', 
                             ExpressionAttributeValues={":id": resource_id}
                         )                
-                
+                for it in data['Items']:
+                    gr, pl=[],[]
+                    if 'groups' in it.keys():
+                        for gid in it['groups']:
+                            grp_details=grp_dynamo.scan(FilterExpression=Attr('id').\
+                            eq(gid), ProjectionExpression='id,group_name,players')['Items']
+                            
+                            for p in grp_details:
+                                if p.get('players', None):
+                                    for pid in p['players']:
+                                        pl_detail = player_dynamo.scan(FilterExpression=Attr('id').eq(pid),\
+                                                    ProjectionExpression='full_name')['Items']
+                                        for name in pl_detail:
+                                            pl.append(name.get('full_name'))
+                                    del p['players']
+                            gr.extend(grp_details)
+                        
+                        it['groups'] = gr
+                        it['players'] = pl
+
                 return respond(None, data['Items'])
             else:
                 data = dynamo.scan()
                 for it in data['Items']:
-                    pl=[]
+                    gr, pl=[],[]
                     if 'groups' in it.keys():
-                        for p in it['groups']:
-                            pl.extend(p.get('players'))
+                        for gid in it['groups']:
+                            grp_details=grp_dynamo.scan(FilterExpression=Attr('id').\
+                            eq(gid), ProjectionExpression='id,group_name,players')['Items']
+                            
+                            for p in grp_details:
+                                if p.get('players', None):
+                                    for pid in p['players']:
+                                        pl_detail = player_dynamo.scan(FilterExpression=Attr('id').eq(pid),\
+                                                    ProjectionExpression='full_name')['Items']
+                                        for name in pl_detail:
+                                            pl.append(name.get('full_name'))
+                                    del p['players']
+                            gr.extend(grp_details)
+                        
+                        it['groups'] = gr
                         it['players'] = pl
-                        del it['groups']
 
                 return respond(None, data)
 
@@ -165,6 +200,7 @@ def lambda_handler(event, context):
                         )
                  
                 return respond(None, {"res": "League deleted successfully"})
+
 
     else:
         return respond(ValueError('Unsupported method "{}"'.format(operation)))

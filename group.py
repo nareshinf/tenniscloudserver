@@ -123,16 +123,37 @@ def lambda_handler(event, context):
             
             resource_id = event['pathParameters'] if 'pathParameters' in event.keys() else None
             resource_id = resource_id['group_id'] if isinstance(resource_id, dict) else None
+            user_dynamo = dynamo_client.Table('users')
             
             if resource_id:
                 data = dynamo.scan(
                             FilterExpression='id=:id', 
                             ExpressionAttributeValues={":id": resource_id}
-                        )                
+                        )   
+                        
+                for it in data['Items']:
+                    pl = []
+                    if it.get('players', None):
+                        for uid in it.get('players'):
+                            players_data = user_dynamo.scan(FilterExpression=Attr('id').eq(str(uid)),\
+                            ProjectionExpression='full_name')['Items']
+                            if players_data:
+                                pl.extend(players_data)
+                        it['players'] = pl            
                 
                 return respond(None, data['Items'])
             else:
                 data = dynamo.scan()
+                for it in data['Items']:
+                    pl = []
+                    if it.get('players', None):
+                        for uid in it.get('players'):
+                            players_data = user_dynamo.scan(FilterExpression=Attr('id').eq(str(uid)),\
+                            ProjectionExpression='id,full_name')['Items']
+                            if players_data:
+                                pl.extend(players_data)
+                        it['players'] = pl            
+                                    
                 return respond(None, data)
 
         elif operation == 'OPTIONS':
@@ -147,12 +168,12 @@ def lambda_handler(event, context):
                 return respond({"res": "Resource id is required"}, {})
 
             if resource_id:
+                
                 data = dynamo.delete_item(
                             Key={
                                 'id': resource_id
                             }
-                        )
-                 
+                        ) 
                 return respond(None, {"res": "Group deleted successfully"})
 
     else:

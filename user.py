@@ -1,3 +1,4 @@
+import re
 import bz2
 import boto3
 import json
@@ -245,6 +246,10 @@ def lambda_handler(event, context):
                 if blank: return respond({"res":"Email is required"}, {})
                 if require: return respond({"res":"Email can't be blank"}, {})
                 
+                vld_email = re.match(r'[^@]+@[^@]+\.[^@]+', payload.get('email'))
+                if not vld_email:
+                    return respond({"res":"Invalid email address"}, {})
+
                 if isinstance(payload, dict) and "password" not in payload.keys():
                     return respond({"res":"password is required"}, {})        
                 
@@ -311,7 +316,7 @@ def lambda_handler(event, context):
             if 'login' in event['path'] or 'forgot-password' in event['path'] or 'change-password' in event['path']:
                 return respond({"res": "Method not allowed"}, {})
 
-            resource_id = event.get('pathParameters', None)
+            resource_id = event['pathParameters'] if 'pathParameters' in event.keys() else None
             resource_id = resource_id['proxy'] if isinstance(resource_id, dict) else None
             
             query_string = event.get('queryStringParameters', None)
@@ -319,12 +324,12 @@ def lambda_handler(event, context):
                 if 'q' in query_string and query_string.get('q') == 'players':
                     data = dynamo.scan(ProjectionExpression='id,full_name,email')
                     return respond(None, data)
-
+                    
             if resource_id:
                 data = dynamo.scan(
                             FilterExpression='id=:id', 
                             ExpressionAttributeValues={":id": resource_id}
-                        )
+                        )                
                 for r in data['Items']:
                     if 'age' in r.keys():
                         r['age'] = str(r['age'])
@@ -349,7 +354,7 @@ def lambda_handler(event, context):
 
             resource_id = event['pathParameters'] if 'pathParameters' in event.keys() else None
             resource_id = resource_id['proxy'] if isinstance(resource_id, dict) else None
-
+            
             if not resource_id:
                 return respond({"res": "Resource id is required"}, {})
 
