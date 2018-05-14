@@ -1,0 +1,40 @@
+﻿AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: An AWS Serverless Specification template describing your function.
+Resources:
+  userHandler:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: user.lambda_handler
+      Runtime: python3.6
+      CodeUri: .
+      Description: ''
+      MemorySize: 128
+      Timeout: 8
+      Role: 'arn:aws:iam::009394877865:role/service-role/damcoApi'
+      Events:
+        Api1:
+          Type: Api
+          Properties:
+            Path: /MyResource
+            Method: ANY
+        Api2:
+          Type: Api
+          Properties:
+            Path: /MyResource
+            Method: ANY
+        Api3:
+          Type: Api
+          Properties:
+            Path: /MyResource
+            Method: ANY
+        Api4:
+          Type: Api
+          Properties:
+            Path: /user
+            Method: ANY
+        Api5:
+          Type: Api
+          Properties:
+            Path: '/user/{proxy+}'
+            Method: GET

@@ -1,13 +1,13 @@
-version: 0.2
 
+version: 0.1
 phases:
-  build:
+  install:
     commands:
-      - echo Build started on `date`
-      - echo Compiling the Python code...
-  post_build:
-    commands:
-      - echo Build completed on `date`
+      - aws cloudformation package --template-file userHandler.yaml leagueHandler.yaml --s3-bucket leaguemanagement 
+                                   --output-template-file outputSamTemplate.yaml
 artifacts:
+  type: zip
   files:
-    - user.py
+    - leagueHandler.yaml
+    - userHandler.yaml
+    - outputSamTemplate.yaml
