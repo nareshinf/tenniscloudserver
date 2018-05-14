@@ -64,10 +64,22 @@ def user_login(payload):
     
     # encrypt and compare from doc
     password = b64_hash_pwd(payload.get('password').encode('utf-8'))
+    check_user_pwd = dynamo.scan(FilterExpression=Attr('email').contains(payload.get('email')),
+                        ProjectionExpression='password')['Items']
+    
+    pwd_incorrect = False
+    if check_user_pwd:
+        for usr_pwd in check_user_pwd:
+            if password != usr_pwd.get('password'):
+                pwd_incorrect = True
+    
+    if pwd_incorrect:
+        return ("Password is incorrect", False)
+        
     check_user = dynamo.scan(
                             FilterExpression=Attr('email').contains(payload.get('email'))\
                                 & Attr('password').contains(password),
-                            ProjectionExpression='full_name, username, email, id'
+                            ProjectionExpression='full_name, username, email, id, is_admin'
                             )
     if check_user.get('Items', None):
         res = {k: v for it in check_user.get('Items') for k, v in it.items()}
@@ -101,7 +113,7 @@ def forgot_password(to_email, pwd):
 def send_mail_on_register(payload):
     
     to_email, pwd = payload.get('email', None),\
-                    payload.get('password', None)
+                    payload.get('plain_pwd', None)
 
     ses_client = boto3.client('ses', region_name='us-east-1')
     
@@ -143,6 +155,35 @@ def validate_email(payload):
     
     return False, False
 
+def add_profile_field(payload):
+    flds = {
+        "office_phone": None,
+        "home_phone": None,
+        "cell_phone": None,
+        "address1": None,
+        "address2": None,
+        "city": None,
+        "user_state": None,
+        "country": None,
+        "zip": None,
+        "height": None,
+        "age": None,
+        "dob": None,
+        "gender": None,
+        "preferred_location": None,
+        "handedness": None,
+        "rating_type": None,
+        "rating": None,
+        "user_others": None,
+        "strength": None,
+        "weakness": None,
+        "is_admin": False
+    }
+
+    payload.update({k:v for k, v in flds.items()})
+    return payload
+
+
 def lambda_handler(event, context):
     
     logger.info('got event{}'.format(event))
@@ -180,7 +221,7 @@ def lambda_handler(event, context):
                 
                 email = dynamo.scan(
                                     FilterExpression= Attr('email').contains(payload.get('email')),
-                                    ProjectionExpression='password'
+                                    ProjectionExpression='password,plain_pwd'
                                 )
                 if email.get('Count') == 0:
                     return respond({"res": "Provided email address does not exist, please check"}, {})
@@ -188,11 +229,11 @@ def lambda_handler(event, context):
                 pwd = None
                 if email.get('Items', None):
                     for obj in email['Items']:
-                        pwd = obj['password']
+                        pwd = obj['plain_pwd']
 
-                user_pwd = base64.b64decode(pwd.value)          # dynamo store base64 encoded as binary
+                user_pwd = str(pwd)          # dynamo store base64 encoded as binary
                 try:
-                    resp = forgot_password(payload.get('email'), str(user_pwd))
+                    resp = forgot_password(payload.get('email'), user_pwd)
                 except ClientError as e:
                     return respond({"res": e}, {})
                 
@@ -209,6 +250,9 @@ def lambda_handler(event, context):
                 
                 if isinstance(payload, dict) and payload['old_password'] == '':
                     return respond({"res":"Old password can't be blank"}, {})
+                
+                if str(payload['old_password']) == str(payload['new_password']):
+                    return respond({"res":"New password cannot be same as the old password"}, {})
 
                 user_obj = dynamo.scan(FilterExpression= Attr('email').contains(payload.get('email')))
                 if user_obj.get('Count') == 0:
@@ -241,7 +285,8 @@ def lambda_handler(event, context):
                 return respond(None, {"res": "Password has been successfully changed. Kindly re-login again to check"})
 
             else:
-
+                
+                source = payload.get('source', 'web')
                 blank, require = validate_email(payload)
                 if blank: return respond({"res":"Email is required"}, {})
                 if require: return respond({"res":"Email can't be blank"}, {})
@@ -249,25 +294,40 @@ def lambda_handler(event, context):
                 vld_email = re.match(r'[^@]+@[^@]+\.[^@]+', payload.get('email'))
                 if not vld_email:
                     return respond({"res":"Invalid email address"}, {})
-
-                if isinstance(payload, dict) and "password" not in payload.keys():
-                    return respond({"res":"password is required"}, {})        
                 
-                if isinstance(payload, dict) and payload['password'] == '':
-                    return respond({"res":"password can't be blank"}, {})
+                if source == 'web':
+                    if isinstance(payload, dict) and "password" not in payload.keys():
+                        return respond({"res":"password is required"}, {})        
+                
+                    if isinstance(payload, dict) and payload['password'] == '':
+                        return respond({"res":"password can't be blank"}, {})
 
-                check_email = dynamo.scan(
+                    check_email = dynamo.scan(
                                     FilterExpression='email=:em', 
                                     ExpressionAttributeValues={":em": payload.get('email')}
                                 )
+                    
+                    if check_email.get('Items', None):
+                        return respond({"res":"Email already exists"}, {})   
 
-                if check_email.get('Items', None):
-                    return respond({"res":"Email already exists"}, {})   
-
-                payload['id'] = str(uuid.uuid4())
-                payload['plain_pwd'] = payload.get('password')
-                payload['password'] = b64_hash_pwd(payload.get('password').encode('utf-8'))
-
+                    payload['plain_pwd'] = payload.get('password')
+                    payload['password'] = b64_hash_pwd(payload.get('password').encode('utf-8'))
+                
+                elif source == 'Google':
+                    user_exist = dynamo.scan(
+                                    FilterExpression=Attr('localId').contains(payload.get('localId')),
+                                    ProjectionExpression='full_name, username, email, id'
+                                )['Items']
+                    
+                    if user_exist:
+                        res = {k: v for it in user_exist for k, v in it.items()}
+                        return respond(None, {"res":res})
+                
+                # If user record does not exist then create the record
+                uid = str(uuid.uuid4())
+                payload['id'] = uid
+                payload = add_profile_field(payload)
+                
                 try:
                     create_user = dynamo.put_item(Item=payload)
                 except ClientError as e:
@@ -276,8 +336,20 @@ def lambda_handler(event, context):
                 
                 if create_user:
                     res_inf, err = send_mail_on_register(payload)
+                    
+                    if source == 'Google':
+                        user_detail = dynamo.scan(
+                                    FilterExpression=Attr('id').contains(uid),
+                                    ProjectionExpression='full_name, username, email, id'
+                                )['Items']
+                    
+                        if user_detail:
+                            res = {k: v for it in user_detail for k, v in it.items()}
+                            return respond(None, {"res":res})
+                    
                     if err:
-                        return respond({"res": res_inf}, {})
+                        return respond(None, {"res": "User created successfully but system not able to send registration mail,"\
+                                                    "as the email address does not verify by system. Please login to continue."})
                     return respond(None, {"res":"User created successfully, please login to continue."})
 
         elif operation == 'PUT':
@@ -316,33 +388,67 @@ def lambda_handler(event, context):
             if 'login' in event['path'] or 'forgot-password' in event['path'] or 'change-password' in event['path']:
                 return respond({"res": "Method not allowed"}, {})
 
-            resource_id = event['pathParameters'] if 'pathParameters' in event.keys() else None
-            resource_id = resource_id['proxy'] if isinstance(resource_id, dict) else None
+            resource = event['pathParameters'] if 'pathParameters' in event.keys() else None
+            resource_id = resource['proxy'] if isinstance(resource, dict) else None
             
             query_string = event.get('queryStringParameters', None)
             if query_string:
                 if 'q' in query_string and query_string.get('q') == 'players':
                     data = dynamo.scan(ProjectionExpression='id,full_name,email')
                     return respond(None, data)
-                    
-            if resource_id:
-                data = dynamo.scan(
-                            FilterExpression='id=:id', 
-                            ExpressionAttributeValues={":id": resource_id}
-                        )                
-                for r in data['Items']:
-                    if 'age' in r.keys():
-                        r['age'] = str(r['age'])
+            
+            if resource_id and 'leagues' in resource_id:
+                resource_id = resource_id.split('/')[0]
+                league_tbl = dynamo_client.Table('league')
                 
-                    if 'password' in r.keys():
-                        del r['password']
+                user_details = dynamo.scan(
+                                FilterExpression='id=:id', 
+                                ExpressionAttributeValues={":id": resource_id},
+                                ProjectionExpression='full_name,email'
+                            )['Items']
+                
+                full_name, email = (None,)*2
+                for r in user_details:
+                    full_name, email = r.get('full_name'), r.get('email')
+                
+                lg_details = league_tbl.scan(FilterExpression=Attr('groups').exists())['Items']
+                reg_lg = []
+                if lg_details:
+                    for gid, lg in enumerate(lg_details):
+                        grp = []
+                        # own created laegues by current auth user  
+                        if lg.get('created_by') == email:
+                            reg_lg.append(lg)
+                        else:
+                           # registered in other leagues
+                            for idx, gr in enumerate(lg.get('groups')):
+                                if full_name.lower() in map(str.lower,gr['players']):
+                                    grp.append(gr)
+                    
+                            if grp:
+                                lg['groups'] = grp
+                                reg_lg.append(lg)
+                    return respond(None, {"res": reg_lg})
+                return respond({"res": "No league detail found"}, {})
+            else:            
+                if resource_id:
+                    data = dynamo.scan(
+                                FilterExpression='id=:id', 
+                                ExpressionAttributeValues={":id": resource_id}
+                            )                
+                    for r in data['Items']:
+                        if 'age' in r.keys():
+                            r['age'] = str(r['age'])
+                    
+                        if 'password' in r.keys():
+                            del r['password']
 
-                    if 'plain_pwd' in r.keys():
-                        del r['plain_pwd']
+                        if 'plain_pwd' in r.keys():
+                            del r['plain_pwd']
 
-                return respond(None, {"res": data.get('Items')[0] if data['Items'] else data['Items'] })
-            else:
-                return respond(None, dynamo.scan())
+                    return respond(None, {"res": data.get('Items')[0] if data['Items'] else data['Items'] })
+                else:
+                    return respond(None, dynamo.scan())
 
         elif operation == 'OPTIONS':
             return respond({})
