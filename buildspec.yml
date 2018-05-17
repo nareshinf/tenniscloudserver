@@ -3,7 +3,9 @@ version: 0.1
 phases:
   install:
     commands:
-      - aws cloudformation package --template-file userHandler.yaml leagueHandler.yaml --s3-bucket leaguemanagement 
+      - aws cloudformation package --template-file userHandler.yaml --s3-bucket leaguemanagement 
+                                   --output-template-file outputSamTemplate.yaml
+      - aws cloudformation package --template-file leagueHandler.yaml --s3-bucket leaguemanagement 
                                    --output-template-file outputSamTemplate.yaml
 artifacts:
   type: zip
