@@ -12,7 +12,7 @@ from botocore.exceptions import ClientError, ParamValidationError
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-print('Loading function')
+print('Loading user function')
 dynamo_client = boto3.resource('dynamodb', region_name='us-east-2')
 dynamo = dynamo_client.Table('users')
 
